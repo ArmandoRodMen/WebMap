@@ -207,7 +207,7 @@
                                     'circle-stroke-color': [
                                         'case',
                                         ['==', ['get', 'numAvailable'], 0], 'red', // If numAvailable is 0, set stroke color to red
-                                        ['==', ['get', 'numAvailable'], 3], 'orange',
+                                        ['==', ['get', 'numAvailable'], 1||2||3], 'orange',
                                         'green' // Otherwise, set stroke color to green
                                     ]
                                 }
