@@ -109,10 +109,10 @@
             
             // Update this image's data with data from the canvas.
             this.data = context.getImageData(
-            0,
-            0,
-            this.width,
-            this.height
+                0,
+                0,
+                this.width,
+                this.height
             ).data;
             
             // Continuously repaint the map, resulting
@@ -122,14 +122,14 @@
             // Return `true` to let the map know that the image was updated.
             return true;
     }};
-
+    /*
     map.loadImage(
         'https://docs.mapbox.com/mapbox-gl-js/assets/custom_marker.png',
         (error, image) => {
             if (error) throw error;
             map.addImage('custom-marker', image);
         }
-    );
+    );*/
     
 
     map.on('load', () => {
@@ -140,17 +140,12 @@
             'type': 'geojson',
             'data': {
             'type': 'FeatureCollection',
-            'features': [
-            {
+            'features': [{
             'type': 'Feature',
             'geometry': {
             'type': 'Point',
             'coordinates': [-99.1542288, 19.436365] 
-            }
-            }
-            ]
-            }
-            });
+            }}]}});
 
             map.addLayer({
                 'id': 'layer-with-pulsing-dot',
@@ -160,54 +155,69 @@
                     'icon-image': 'pulsing-dot'
                 }
                 });
+
                 
-        fetch('https://gbfs.mex.lyftbikes.com/gbfs/en/station_information.json')
-            .then(response => response.json())
-            .then(data => {
-                const stations = data.data.stations;
-
-                const geojson = {
-                    type: 'FeatureCollection',
-                    features: stations.map(station => ({
-                        type: 'Feature',
-                        properties: {
-                            id: station.station_id,
-                            name: station.name,
-                            capacity: station.capacity,
-                        },
-                        geometry: {
-                            type: 'Point',
-                            coordinates: [station.lon, station.lat],
-                        }
-                    }))
-                };
-                
-
-                map.addSource('ecobici', {
-                    type: 'geojson',
-                    data: geojson
+                fetch('https://gbfs.mex.lyftbikes.com/gbfs/en/station_information.json')
+                .then(response => response.json())
+                .then(data => {
+                    const stations = data.data.stations;
+                    const names = stations.map(station => station.name);
+                    const lon = stations.map(station => station.lon);
+                    const lat = stations.map(station => station.lat);
+                    return { stations, names, lon, lat };
+                })
+                .then(({ stations, names, lon, lat }) => {
+                    return fetch('https://gbfs.mex.lyftbikes.com/gbfs/en/station_status.json')
+                        .then(response => response.json())
+                        .then(statusData => {
+                            const stationsStatus = statusData.data.stations;
+                            const geojsonEcoBicis = {
+                                type: 'FeatureCollection',
+                                features: stationsStatus.map((station, index) => ({
+                                    type: 'Feature',
+                                    properties: {
+                                        id: station.station_id,
+                                        name: names[index],
+                                        numAvailable: station.num_bikes_available,
+                                        numDisavailable: station.num_bikes_disabled,
+                                        numDocksAvailable: station.num_docks_available,
+                                        numDocksDisavailable: station.num_docks_disabled
+                                    },
+                                    geometry: {
+                                        type: 'Point',
+                                        coordinates: [lon[index], lat[index]],
+                                    }
+                                }))
+                            };
+            
+                            // Move map-related code inside this block
+                            map.addSource('ecobicis', {
+                                type: 'geojson',
+                                data: geojsonEcoBicis,
+                            });
+            
+                            map.addLayer({
+                                id: 'ecobicis-layer',
+                                type: 'circle',
+                                source: 'ecobicis',
+                                paint: {
+                                    'circle-radius': 8,
+                                    'circle-stroke-width': 5,
+                                    'circle-color': 'white',
+                                    'circle-stroke-color': [
+                                        'case',
+                                        ['==', ['get', 'numAvailable'], 0], 'red', // If numAvailable is 0, set stroke color to red
+                                        ['==', ['get', 'numAvailable'], 3], 'orange',
+                                        'green' // Otherwise, set stroke color to green
+                                    ]
+                                }
+                            });
+                        });
+                })
+                .catch(error => {
+                    console.error('Error:', error);
                 });
-
-                map.addLayer({
-                    id: 'ecobici-layer',
-                    type: 'symbol',
-                    source: 'ecobici',
-                    layout: {
-                        'icon-image': 'custom-marker', // Specify the image for the marker
-                        'icon-size': 0.5, // Adjust the size of the marker
-                        'icon-allow-overlap': true, // Allow markers to overlap
-                    },
-                    paint: {
-                        'circle-radius': 8,
-                        'circle-stroke-width': 2,
-                        'circle-color': '#0006E5',
-                        'circle-stroke-color': 'white'
-                    }
-                });
-            })
-            .catch(error => console.error('Error fetching data:', error));
-
-        
+            
 
         fetch('../../geojson/biciEstacionamiento/biciestacionamientos.json')
             .then(response => response.json())
@@ -370,21 +380,24 @@
         })
         .catch(error => console.error('Error fetching JSON:', error));
 
-        // Center the map on the coordinates of any clicked circle from the 'circle' layer.
-        map.on('click', 'ecobici-layer', (e) => {
-            const coordinates = e.features[0].geometry.coordinates.slice();
 
-            const name = e.features[0].properties.id;
+
+
+        // Center the map on the coordinates of any clicked circle from the 'circle' layer.
+        map.on('click', 'ecobicis-layer', (e) => {
+            const coordinates = e.features[0].geometry.coordinates.slice();
+            const name = e.features[0].properties.name;
+            const numAvailable = e.features[0].properties.numAvailable;
+
+            console.log(e.features[0].properties);
             while(Math.abs(e.lngLat.lng - coordinates[0]) > 180 ){
                 coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
             }
 
             const popup = new mapboxgl.Popup()
                 .setLngLat(coordinates)
-                .setHTML(`EcoBici: ${name}`)
+                .setHTML(`${name} \n Disponibles: ${numAvailable}`)
                 .addTo(map);
-            
-            popup.getElement().style.backgroundColor = 'blue';
 
             map.flyTo({
                 center: e.features[0].geometry.coordinates
@@ -392,12 +405,12 @@
         });
 
         // Change the cursor to a pointer when the it enters a feature in the 'circle' layer.
-        map.on('mouseenter', 'ecobici-layer', () => {
+        map.on('mouseenter', 'ecobicis-layer', () => {
             map.getCanvas().style.cursor = 'pointer';
         });
 
         // Change it back to a pointer when it leaves.
-        map.on('mouseleave', 'ecobici-layer', () => {
+        map.on('mouseleave', 'ecobicis-layer', () => {
             map.getCanvas().style.cursor = '';
         });
 
